@@ -7,7 +7,7 @@ You can run this notebook in Google Colab by clicking the button below:
 - Custom Auto Encoder
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/14psva_4VoKTRoI5dSur4BYwlbiToNfOx?usp=sharing)
 - VAE Auto Encoder
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/14psva_4VoKTRoI5dSur4BYwlbiToNfOx?usp=sharing)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1gk8I2tQAfqcQIANeweGyOHUPtL8tGSjH?usp=sharing)
 
 ## Arguments
 - --mode: **Required.** Mode to run the AutoEncoder. Options: "train", "evaluate", "noisy", "sampling", "interpolate".
