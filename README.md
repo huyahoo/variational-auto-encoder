@@ -36,7 +36,7 @@ python3 autoencoder.py --mode sampling
 python3 autoencoder.py --mode interpolate
 ```
 
-### Custom Auto Encoder
+### VAE Auto Encoder
 ``` $bash
 python3 VAE-autoencoder.py --mode train
 python3 VAE-autoencoder.py --mode evaluate
