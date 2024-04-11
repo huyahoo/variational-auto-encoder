@@ -210,7 +210,7 @@ class BaseModel():
         plt.show()
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='AutoEncoder Modes')
+    parser = argparse.ArgumentParser(description='VAE AutoEncoder')
     parser.add_argument('--mode', type=str, required=True, 
                         help='Mode to run the AutoEncoder. Options: "train", "evaluate", "noisy", "sampling", "interpolate"')
     parser.add_argument('--model', type=str, default='vae_model.pth',
