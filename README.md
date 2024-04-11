@@ -1,4 +1,4 @@
-# AutoEncoder Modes
+# Variantional Auto Encoder
 
 This script allows you to train, evaluate, sampling, and interpolate an AutoEncoder model in PyTorch on the MNIST dataset.
 
