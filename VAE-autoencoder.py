@@ -11,9 +11,9 @@ import argparse
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-class AutoEncoder(nn.Module):
-    def __init__(self, latent_dim):
-        super(AutoEncoder, self).__init__()
+class VAE(nn.Module):
+    def __init__(self, latent_dim=10):
+        super(VAE, self).__init__()
         
         # Encoder
         self.encoder = nn.Sequential(
@@ -24,7 +24,8 @@ class AutoEncoder(nn.Module):
             nn.Flatten(),
         )
 
-        self.latent = nn.Linear(64 * 7 * 7, latent_dim)
+        self.fc_mu = nn.Linear(64 * 7 * 7, latent_dim)
+        self.fc_logvar = nn.Linear(64 * 7 * 7, latent_dim)
         
         # Decoder
         self.decoder = nn.Sequential(
@@ -37,56 +38,70 @@ class AutoEncoder(nn.Module):
             nn.Sigmoid()
         )
 
+    def reparameterize(self, mu, logvar):
+        std = torch.exp(0.5*logvar)
+        eps = torch.randn_like(std)
+        return mu + eps*std
+
+    def forward(self, x):
+        x = self.encoder(x)
+        mu = self.fc_mu(x)
+        logvar = self.fc_logvar(x)
+        z = self.reparameterize(mu, logvar)
+        return self.decoder(z), mu, logvar
+
     def forward(self, x, return_latent=False):
         x = self.encoder(x)
-        x = self.latent(x)
+        mu = self.fc_mu(x)
+        logvar = self.fc_logvar(x)
+        z = self.reparameterize(mu, logvar)
         if return_latent:
-            return x
-        x = self.decoder(x)
-        return x
+            return z
+        else:
+            return self.decoder(z), mu, logvar
 
 class BaseModel():
     def __init__(self, args):
         super(BaseModel, self).__init__()
-
+        
         self.device = device
-
         self.transform = transforms.Compose([
             transforms.ToTensor()
         ])
-
         self.latent_dim = args.latent_dim
         self.lr = args.lr
         self.epochs = args.epochs
         self.batch_size = args.batch_size
         self.noise_level = args.noise_level
-
+        
         self.test_dataset = torchvision.datasets.MNIST(root='./data', train=False, transform=self.transform, download=True)
         self.test_loader = DataLoader(self.test_dataset, batch_size=7, shuffle=True)
+
+    @staticmethod
+    def loss_function(recon_x, x, mu, logvar):
+        BCE = torch.nn.functional.binary_cross_entropy(recon_x.view(-1, 784), x.view(-1, 784), reduction='sum')
+        KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+        return BCE + KLD
 
     def train(self, model):
         train_dataset = torchvision.datasets.MNIST(root='./data', train=True, transform=self.transform, download=True)
         train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
 
-        criterion = nn.MSELoss()
-        optimizer = optim.Adam(model.parameters())
+        optimizer = optim.Adam(model.parameters(), lr=self.lr)
 
         for epoch in range(self.epochs):
-            running_loss = 0.0
             for images, _ in train_loader:
                 images = images.to(self.device)
-                
+        
                 optimizer.zero_grad()
-                reconstructed_images = model(images)
-                loss = criterion(reconstructed_images, images)
+                reconstructed_images, mu, logvar = model(images)
+                loss = self.loss_function(reconstructed_images, images, mu, logvar)
                 loss.backward()
                 optimizer.step()
-                running_loss += loss.item() * images.size(0)
             
-            epoch_loss = running_loss / len(train_loader.dataset)
-            print(f"Epoch [{epoch+1}/{self.epochs}], Loss: {epoch_loss:.4f}")
+            print(f"Epoch [{epoch+1}/{self.epochs}], Loss: {loss.item():.4f}")
         
-        torch.save(model.state_dict(), 'autoencoder_model.pth')
+        torch.save(model.state_dict(), 'vae_model.pth')
 
         print('Finished Training')
     
@@ -100,23 +115,21 @@ class BaseModel():
     def save_output(plt, filename):
         if not os.path.exists('output'):
             os.makedirs('output')
-        if not os.path.exists(os.path.join('output', 'custom_auto_encoder')):
-            os.makedirs(os.path.join('output', 'custom_auto_encoder'))
-        plt.savefig(os.path.join('output/custom_auto_encoder', filename))
+        if not os.path.exists(os.path.join('output', 'vae')):
+            os.makedirs(os.path.join('output', 'vae'))
+        plt.savefig(os.path.join('output/vae', filename))
     
     def evaluate(self, model):
-        model.load_state_dict(torch.load('autoencoder_model.pth'))
-
         test_images, _ = next(iter(self.test_loader))
         test_images = test_images.to(self.device)
 
-        reconstructed_images = model(test_images)
+        reconstructed_images, _, _ = model(test_images)
 
         fig, axes = plt.subplots(nrows=2, ncols=7, figsize=(10, 6))
 
         for images, row in zip([test_images, reconstructed_images], axes):
             for img, ax in zip(images, row):
-                ax.imshow(img.cpu().detach().numpy().squeeze(), cmap='gray')
+                ax.imshow(img[0].cpu().detach().numpy().squeeze(), cmap='gray')  # Select the first image from the batch
                 ax.axis('off')
 
         axes[0, 0].set_title('Original')
@@ -128,20 +141,18 @@ class BaseModel():
         plt.show()
         
     def reconstruc_noisy_images(self, model):
-        model.load_state_dict(torch.load('autoencoder_model.pth'))
-
         test_images, _ = next(iter(self.test_loader))
         test_images = test_images.to(self.device)
 
         noisy_images = self.add_noise(test_images, noise_level=0.5)
 
-        reconstructed_noisy_images = model(noisy_images)
+        reconstructed_noisy_images, _, _ = model(noisy_images)
 
         fig, axes = plt.subplots(nrows=3, ncols=5, figsize=(10, 6))
 
         for images, row in zip([test_images, noisy_images, reconstructed_noisy_images], axes):
             for img, ax in zip(images, row):
-                ax.imshow(img.cpu().detach().numpy().squeeze(), cmap='gray')
+                ax.imshow(img[0].cpu().detach().numpy().squeeze(), cmap='gray')  # Select the first image from the batch
                 ax.axis('off')
 
         axes[0, 0].set_title('Original')
@@ -154,8 +165,6 @@ class BaseModel():
         plt.show()
     
     def sample_latent_space(self, model):
-        model.load_state_dict(torch.load('autoencoder_model.pth'))
-
         z = torch.randn(30, self.latent_dim, device=self.device)
         
         with torch.no_grad():
@@ -173,8 +182,6 @@ class BaseModel():
         plt.show()
     
     def interpolate_latent(self, model, alpha=0.5):
-        model.load_state_dict(torch.load('autoencoder_model.pth'))
-
         test_images, _ = next(iter(self.test_loader))
         test_images = test_images.to(self.device)
         image1, image2 = test_images[0:1], test_images[1:2]
@@ -206,7 +213,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='AutoEncoder Modes')
     parser.add_argument('--mode', type=str, required=True, 
                         help='Mode to run the AutoEncoder. Options: "train", "evaluate", "noisy", "sampling", "interpolate"')
-    parser.add_argument('--model', type=str, default='autoencoder_model.pth',
+    parser.add_argument('--model', type=str, default='vae_model.pth',
                         help='Path to the trained model.')
     parser.add_argument('--alpha', type=float, default=0.5, 
                         help='Alpha value for interpolation. Only used in "interpolate" mode.')
@@ -224,9 +231,13 @@ if __name__ == "__main__":
 
     model = BaseModel(args)
 
-    auto_encoder_model = AutoEncoder(args.latent_dim).to(device)
+    print("-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-\nUsing VAE AutoEncoder\n-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-")
+    auto_encoder_model = VAE(args.latent_dim).to(device)
 
     mode = args.mode
+
+    if mode != 'train':
+        auto_encoder_model.load_state_dict(torch.load(args.model))
 
     if mode == 'train':
         model.train(auto_encoder_model)
